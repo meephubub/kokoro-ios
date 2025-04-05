@@ -1,0 +1,30 @@
+workflows:
+  kokoro-ios:
+    name: Kokoro iOS Build
+    environment:
+      xcode: latest
+    scripts:
+      - name: Make build script executable
+        script: |
+          chmod +x espeak-ng/build-espeak-ng.sh
+
+      - name: Build eSpeak NG xcframework
+        script: |
+          ./espeak-ng/build-espeak-ng.sh
+
+      - name: Build Kokoro iOS App
+        script: |
+          xcodebuild -project mlxtest.xcodeproj \
+                     -scheme mlxtest \
+                     -sdk iphoneos \
+                     -configuration Release \
+                     -archivePath $CM_BUILD_DIR/Kokoro.xcarchive \
+                     archive
+
+          xcodebuild -exportArchive \
+                     -archivePath $CM_BUILD_DIR/Kokoro.xcarchive \
+                     -exportOptionsPlist ExportOptions.plist \
+                     -exportPath $CM_BUILD_DIR/build
+
+    artifacts:
+      - build/*.ipa
