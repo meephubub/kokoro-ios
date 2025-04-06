@@ -1,30 +1,61 @@
 workflows:
-  kokoro-ios:
-    name: Kokoro iOS Build
+  ios-mlx-tts-app:
+    name: iOS MLX TTS App
     environment:
       xcode: latest
+      cocoapods: default
+      vars:
+        BUNDLE_ID: "com.example.mlxtest" # Replace with your actual bundle ID
+        HUGGINGFACE_MODEL_URL: "https://huggingface.co/prince-canuma/Kokoro-82M/resolve/main/kokoro-v1_0.safetensors"
     scripts:
-      - name: Make build script executable
+      - name: Download model weights
         script: |
-          chmod +x espeak-ng/build-espeak-ng.sh
-
+          mkdir -p mlxtest/mlxtest/Resources
+          echo "Downloading model weights from Hugging Face..."
+          curl -L $HUGGINGFACE_MODEL_URL -o mlxtest/mlxtest/Resources/kokoro-v1_0.safetensors
+          echo "Model weights downloaded successfully"
+          
       - name: Build eSpeak NG xcframework
         script: |
-          ./espeak-ng/build-espeak-ng.sh
-
-      - name: Build Kokoro iOS App
+          echo "Cloning eSpeak NG repository..."
+          git clone https://github.com/espeak-ng/espeak-ng.git
+          cd espeak-ng
+          
+          echo "Building eSpeak NG xcframework..."
+          xcodebuild -project eSpeak\ NG.xcodeproj -scheme "espeak-ng .xcframework" -configuration Release
+          
+          echo "Moving xcframework to project directory..."
+          mkdir -p ../Frameworks
+          cp -R ESpeakNG.xcframework ../Frameworks/
+          cd ..
+          
+      - name: Update bundle identifier
         script: |
-          xcodebuild -project mlxtest.xcodeproj \
-                     -scheme mlxtest \
-                     -sdk iphoneos \
-                     -configuration Release \
-                     -archivePath $CM_BUILD_DIR/Kokoro.xcarchive \
-                     archive
-
-          xcodebuild -exportArchive \
-                     -archivePath $CM_BUILD_DIR/Kokoro.xcarchive \
-                     -exportOptionsPlist ExportOptions.plist \
-                     -exportPath $CM_BUILD_DIR/build
-
+          echo "Updating bundle identifier to $BUNDLE_ID..."
+          /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" mlxtest/mlxtest/Info.plist
+          
+      - name: Set up code signing
+        script: |
+          echo "Setting up code signing..."
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_DEVELOPMENT --create
+          keychain add-certificates
+          xcode-project use-profiles --project mlxtest/mlxtest.xcodeproj
+          
+      - name: Build iOS app
+        script: |
+          echo "Building iOS app..."
+          xcode-project build-ipa --project mlxtest/mlxtest.xcodeproj --scheme mlxtest --configuration Release
+          
     artifacts:
-      - build/*.ipa
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.app
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+    publishing:
+      email:
+        recipients:
+          - samthelegend68@gmail.com # Replace with your email
+        notify:
+          success: true
+          failure: true
